@@ -16,7 +16,8 @@ impl Registers {
         // getter (self is not mutable as we are only accessing value)
         // Convert A to a 16-bit unsigned integer and shift it 8 positions to the left (high bit)
         // Combine it with the F register using bitwise OR (low bit)
-        (self.a as u16) << 8 | (self.f.zero as u16) << ZERO_FLAG_BYTE_POSITION
+        (self.a as u16) << 8
+            | (self.f.zero as u16) << ZERO_FLAG_BYTE_POSITION
             | (self.f.subtract as u16) << SUBTRACT_FLAG_BYTE_POSITION
             | (self.f.half_carry as u16) << HALF_CARRY_FLAG_BYTE_POSITION
             | (self.f.carry as u16) << CARRY_FLAG_BYTE_POSITION
@@ -155,21 +156,37 @@ enum Instruction {
     AddC(ArithmeticTarget),
     SUB(ArithmeticTarget),
     SBC(ArithmeticTarget),
+    AND(ArithmeticTarget),
+    OR(ArithmeticTarget),
+    XOR(ArithmeticTarget),
+    CP(ArithmeticTarget),
+    INC(ArithmeticTarget),
+    DEC(ArithmeticTarget),
+    CCF(ArithmeticTarget),
+    SCF(ArithmeticTarget),
 }
 
 #[derive(Clone, Copy)]
 enum ArithmeticTarget {
-    A, B, C, D, E, H, L, BC, DE, HL
+    A,
+    B,
+    C,
+    D,
+    E,
+    H,
+    L,
+    BC,
+    DE,
+    HL,
 }
 
 struct CPU {
     registers: Registers,
     flags: FlagsRegister,
-    instructions: Instruction
+    instructions: Instruction,
 }
 
 impl CPU {
-
     // Function to get value of specific 16-bit register pair
     fn get_register_pair_value_name(&self, target: ArithmeticTarget) -> u16 {
         // match the target register pair and return its value
@@ -206,10 +223,36 @@ impl CPU {
                 let new_diffc = self.sbc(target, diff_c);
                 self.registers.set_register_value(target, new_diffc);
             }
-            _ => { /* TODO: Support the other instructions */}
+            Instruction::AND(target) => {
+                self.and(target);
+            }
+            Instruction::OR(target) => {
+                self.or(target);
+            }
+            Instruction::XOR(target) => {
+                self.xor(target);
+            }
+            Instruction::CP(target) => {
+                let value = self.registers.get_register_value(target);
+                self.cp(target, value);
+            }
+            Instruction::INC(target) => {
+                self.inc(target);
+            }
+            Instruction::DEC(target) => {
+                self.dec(target);
+            }
+            Instruction::CCF(target) => {
+                self.ccf();
+            }
+            Instruction::SCF(target) => {
+                self.scf();
+            }
+            _ => { /* TODO: Support the other instructions */ }
         }
     }
 
+    // Perform addition
     fn add(&mut self, target: ArithmeticTarget, value: u8) -> u8 {
         let (new_value, did_overflow) = match target {
             ArithmeticTarget::A => {
@@ -300,6 +343,7 @@ impl CPU {
         new_value
     }
 
+    // Perform addition but only with HL register
     fn add_hl_rr(&mut self, source: ArithmeticTarget) {
         let hl_value = self.registers.get_hl(); // get current value in HL register pair
         let rr_value = self.registers.get_register_value(source); // get the value of the specified 16-bit register pair (rr)
@@ -319,7 +363,7 @@ impl CPU {
         // Match the target register and get its current value and overflow status after adding the provided value
         let (register_value, did_overflow) = match target {
             ArithmeticTarget::A => {
-                let (result, overflow) = self.registers.a.overflowing_add(value);
+                let (result, overflow) = self.registers.a.overflowing_add(value); // returns tuple with bool telling if overflow occurred
                 (result, overflow)
             }
             ArithmeticTarget::B => {
@@ -373,15 +417,16 @@ impl CPU {
 
         // Update status flags based on the result of the addition with carry
         self.registers.f.zero = result_with_carry == 0;
-        self.registers.f.subtract = false;  // Clear the subtract flag as it's an addition operation
-        self.registers.f.carry = did_overflow;  // Set the carry flag if there was overflow
-        // Check for a half-carry condition in the addition with carry
+        self.registers.f.subtract = false; // Clear the subtract flag as it's an addition operation
+        self.registers.f.carry = did_overflow; // Set the carry flag if there was overflow
+                                               // Check for a half-carry condition in the addition with carry
         self.registers.f.half_carry = (self.registers.a & 0xF) + (value & 0xF) + carry > 0xF;
 
         // Return the result of the addition with carry
         result_with_carry
     }
 
+    // Perform subtraction
     fn sub(&mut self, target: ArithmeticTarget, value: u8) -> u8 {
         let (new_value, did_overflow) = match target {
             ArithmeticTarget::A => {
@@ -467,7 +512,8 @@ impl CPU {
                 self.registers.f.half_carry = false;
                 (0, false)
             }
-        }; new_value
+        };
+        new_value
     }
 
     // Perform subtraction with carry of specified value from target register
@@ -477,7 +523,7 @@ impl CPU {
         // Match the target register and get its current value and overflow information after subtracting provided value
         let (register_value, did_overflow) = match target {
             ArithmeticTarget::A => {
-                let (result, overflow) = self.registers.a.overflowing_sub(value);
+                let (result, overflow) = self.registers.a.overflowing_sub(value); // returns tuple with bool telling if overflow occurred
                 (result, overflow)
             }
             ArithmeticTarget::B => {
@@ -530,12 +576,198 @@ impl CPU {
 
         // Update status flags based on the result of the subtraction with carry
         self.registers.f.zero = result_with_carry == 0;
-        self.registers.f.subtract = true;  // Set the subtract flag as it's a subtraction operation
-        self.registers.f.carry = did_overflow;  // Set the carry flag if there was overflow
-        // Check for a half-carry condition in the subtraction with carry
+        self.registers.f.subtract = true; // Set the subtract flag as it's a subtraction operation
+        self.registers.f.carry = did_overflow; // Set the carry flag if there was overflow
+                                               // Check for a half-carry condition in the subtraction with carry
         self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF) + carry;
 
         // Return the result of the subtraction with carry
         result_with_carry
+    }
+
+    // Perform a bitwise AND operation between value in specified register and value in A register
+    fn and(&mut self, target: ArithmeticTarget) {
+        // Get value from specified register
+        let value = self.registers.get_register_value(target);
+
+        // Perform AND operation between value in target and value in A
+        let result = self.registers.a & value;
+
+        // Update A register with result of AND operation
+        self.registers.a = result;
+
+        // Update status flags based on result
+        self.registers.f.zero = result == 0; // Set the zero flag if the result is zero
+        self.registers.f.subtract = false; // Clear the subtract flag
+        self.registers.f.carry = false; // Clear the carry flag
+        self.registers.f.half_carry = false; // Clear the half-carry flag
+    }
+
+    // Perform a bitwise OR operation between value in specified register and value in A register
+    fn or(&mut self, target: ArithmeticTarget) {
+        // Get value from specified register
+        let value = self.registers.get_register_value(target);
+
+        // Perform OR operation between value in target and value in A
+        let result = self.registers.a | value;
+
+        // Update A register with result of OR operation
+        self.registers.a = result;
+
+        // Update status flags based on result
+        self.registers.f.zero = result == 0; // Set the zero flag if the result is zero
+        self.registers.f.subtract = false; // Clear the subtract flag
+        self.registers.f.carry = false; // Clear the carry flag
+        self.registers.f.half_carry = false; // Clear the half-carry flag
+    }
+
+    // Perform a bitwise XOR operation between value in specified register and value in A register
+    fn xor(&mut self, target: ArithmeticTarget) {
+        // Get value from specified register
+        let value = self.registers.get_register_value(target);
+
+        // Perform XOR operation between value in target and value in A
+        let result = self.registers.a ^ value;
+
+        // Update A register with result of XOR operation
+        self.registers.a = result;
+
+        // Update status flags based on result
+        self.registers.f.zero = result == 0; // Set the zero flag if the result is zero
+        self.registers.f.subtract = false; // Clear the subtract flag
+        self.registers.f.carry = false; // Clear the carry flag
+        self.registers.f.half_carry = false; // Clear the half-carry flag
+    }
+
+    // Perform comparison with value in specified register with value in A register without modifying A register
+    fn cp(&mut self, target: ArithmeticTarget, value: u8) {
+        match target {
+            ArithmeticTarget::A => {
+                // perform subtraction of value in A register and provided value
+                let (_, overflow) = self.registers.a.overflowing_add(value);
+                // set zero flag using whether the result is zero
+                self.registers.f.zero = self.registers.a == value;
+                // set subtract flag to true
+                self.registers.f.subtract = true;
+                // set carry flag based on overflow in subtraction
+                self.registers.f.carry = overflow;
+                // Half Carry is set if adding the lower nibbles of the value and the register
+                // together result in a value bigger than 0xF.
+                self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
+            }
+            ArithmeticTarget::B => {
+                let (_, overflow) = self.registers.b.overflowing_add(value);
+                self.registers.f.zero = self.registers.b == value;
+                self.registers.f.subtract = true;
+                self.registers.f.carry = overflow;
+                self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
+            }
+            ArithmeticTarget::C => {
+                let (_, overflow) = self.registers.c.overflowing_add(value);
+                self.registers.f.zero = self.registers.c == value;
+                self.registers.f.subtract = true;
+                self.registers.f.carry = overflow;
+                self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
+            }
+            ArithmeticTarget::D => {
+                let (_, overflow) = self.registers.d.overflowing_add(value);
+                self.registers.f.zero = self.registers.d == value;
+                self.registers.f.subtract = true;
+                self.registers.f.carry = overflow;
+                self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
+            }
+            ArithmeticTarget::E => {
+                let (_, overflow) = self.registers.e.overflowing_add(value);
+                self.registers.f.zero = self.registers.e == value;
+                self.registers.f.subtract = true;
+                self.registers.f.carry = overflow;
+                self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
+            }
+            ArithmeticTarget::H => {
+                let (_, overflow) = self.registers.h.overflowing_add(value);
+                self.registers.f.zero = self.registers.h == value;
+                self.registers.f.subtract = true;
+                self.registers.f.carry = overflow;
+                self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
+            }
+            ArithmeticTarget::L => {
+                let (_, overflow) = self.registers.l.overflowing_add(value);
+                self.registers.f.zero = self.registers.l == value;
+                self.registers.f.subtract = true;
+                self.registers.f.carry = overflow;
+                self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
+            }
+            _ => {
+                // Handle other cases or return a default value as needed
+                self.registers.f.zero = false;
+                self.registers.f.subtract = false;
+                self.registers.f.carry = false;
+                self.registers.f.half_carry = false;
+            }
+        }
+    }
+
+    // Increment the value in a specific register by 1
+    fn inc(&mut self, target: ArithmeticTarget) {
+        let (register_value, _) = match target {
+            ArithmeticTarget::A => (&mut self.registers.a, false),
+            ArithmeticTarget::B => (&mut self.registers.b, false),
+            ArithmeticTarget::C => (&mut self.registers.c, false),
+            ArithmeticTarget::D => (&mut self.registers.d, false),
+            ArithmeticTarget::E => (&mut self.registers.e, false),
+            ArithmeticTarget::H => (&mut self.registers.h, false),
+            ArithmeticTarget::L => (&mut self.registers.l, false),
+            _ => {
+                // Handle other cases or return as needed
+                return;
+            }
+        };
+
+        *register_value = register_value.wrapping_add(1);
+
+        // Update status flags or any other logic you need here
+        self.registers.f.zero = false;
+        self.registers.f.subtract = false;
+        self.registers.f.carry = false;
+        self.registers.f.half_carry = false;
+    }
+
+    // Decrement the value in a specific register by 1
+    fn dec(&mut self, target: ArithmeticTarget) {
+        let (register_value, _) = match target {
+            ArithmeticTarget::A => (&mut self.registers.a, false),
+            ArithmeticTarget::B => (&mut self.registers.b, false),
+            ArithmeticTarget::C => (&mut self.registers.c, false),
+            ArithmeticTarget::D => (&mut self.registers.d, false),
+            ArithmeticTarget::E => (&mut self.registers.e, false),
+            ArithmeticTarget::H => (&mut self.registers.h, false),
+            ArithmeticTarget::L => (&mut self.registers.l, false),
+            _ => {
+                // Handle other cases or return as needed
+                return;
+            }
+        };
+
+        *register_value = register_value.wrapping_sub(1);
+
+        // Update status flags or any other logic you need here
+        self.registers.f.zero = false;
+        self.registers.f.subtract = false;
+        self.registers.f.carry = false;
+        self.registers.f.half_carry = false;
+    }
+
+    // Complement carry flag
+    fn ccf(&mut self) {
+        self.registers.f.subtract = false;
+        self.registers.f.half_carry = false;
+        self.registers.f.carry = !self.registers.f.carry;
+    }
+
+    // Set carry flag
+    fn scf(&mut self) {
+        self.registers.f.subtract = false;
+        self.registers.f.half_carry = false;
+        self.registers.f.carry = true;
     }
 }
