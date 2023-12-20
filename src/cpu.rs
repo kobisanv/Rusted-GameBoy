@@ -164,6 +164,22 @@ enum Instruction {
     DEC(ArithmeticTarget),
     CCF(ArithmeticTarget),
     SCF(ArithmeticTarget),
+    RRA(ArithmeticTarget),
+    RLA(ArithmeticTarget),
+    RRCA(ArithmeticTarget),
+    RRLA(ArithmeticTarget),
+    CPL(ArithmeticTarget),
+    BIT(ArithmeticTarget, u8),
+    RESET(ArithmeticTarget, u8),
+    SET(ArithmeticTarget, u8),
+    SRL(ArithmeticTarget),
+    RR(ArithmeticTarget),
+    RL(ArithmeticTarget),
+    RRC(ArithmeticTarget),
+    RLC(ArithmeticTarget),
+    SRA(ArithmeticTarget),
+    SLA(ArithmeticTarget),
+    SWAP(ArithmeticTarget),
 }
 
 #[derive(Clone, Copy)]
@@ -248,7 +264,54 @@ impl CPU {
             Instruction::SCF(target) => {
                 self.scf();
             }
-            _ => { /* TODO: Support the other instructions */ }
+            Instruction::RRA(target) => {
+                self.rra();
+            }
+            Instruction::RLA(target) => {
+                self.rla();
+            }
+            Instruction::RRCA(target) => {
+                self.rrca();
+            }
+            Instruction::RRLA(target) => {
+                self.rrla();
+            }
+            Instruction::CPL(target) => {
+                self.cpl();
+            }
+            Instruction::BIT(target, Bit) => {
+                self.bit(target, Bit);
+            }
+            Instruction::RESET(target, Bit) => {
+                self.reset(target, Bit);
+            }
+            Instruction::SET(target, Bit) => {
+                self.set(target, Bit);
+            }
+            Instruction::SRL(target) => {
+                self.srl(target);
+            }
+            Instruction::RR(target) => {
+                self.rr(target);
+            }
+            Instruction::RL(target) => {
+                self.rl(target);
+            }
+            Instruction::RRC(target) => {
+                self.rrc(target);
+            }
+            Instruction::RLC(target) => {
+                self.rlc(target);
+            }
+            Instruction::SRA(target) => {
+                self.sra(target);
+            }
+            Instruction::SLA(target) => {
+                self.sla(target);
+            }
+            Instruction::SWAP(target) => {
+                self.swap(target);
+            }
         }
     }
 
@@ -258,16 +321,21 @@ impl CPU {
             ArithmeticTarget::A => {
                 // Perform addition of the value in register A and the provided value
                 let (new_value, overflow) = self.registers.a.overflowing_add(value);
+
                 // Set the zero flag based on whether the result is zero
                 self.registers.f.zero = new_value == 0;
+
                 // Clear the subtract flag (not performing subtraction)
                 self.registers.f.subtract = false;
+
                 // Set the carry flag based on overflow in the addition
                 self.registers.f.carry = overflow;
+
                 // Check for a half-carry condition in the addition
                 // Half Carry is set if adding the lower nibbles of the value and the register
                 // together result in a value bigger than 0xF.
                 self.registers.f.half_carry = (self.registers.a & 0xF) + (value & 0xF) > 0xF;
+
                 // Return a tuple containing the result of the addition and overflow information
                 (new_value, overflow)
             }
@@ -432,15 +500,20 @@ impl CPU {
             ArithmeticTarget::A => {
                 // perform subtraction of value in register A and provided value
                 let (new_value, overflow) = self.registers.a.overflowing_sub(value);
+
                 // set the zero flag using whether the result is zero
                 self.registers.f.zero = new_value == 0;
+
                 // set subtract flag to true
                 self.registers.f.subtract = true;
+
                 // set carry flag based on overflow in subtraction
                 self.registers.f.carry = overflow;
+
                 // Half Carry is set if adding the lower nibbles of the value and the register
                 // together result in a value bigger than 0xF.
                 self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
+
                 // return tuple containing result of subtraction and overflow information
                 (new_value, overflow)
             }
@@ -645,12 +718,16 @@ impl CPU {
             ArithmeticTarget::A => {
                 // perform subtraction of value in A register and provided value
                 let (_, overflow) = self.registers.a.overflowing_add(value);
+
                 // set zero flag using whether the result is zero
                 self.registers.f.zero = self.registers.a == value;
+
                 // set subtract flag to true
                 self.registers.f.subtract = true;
+
                 // set carry flag based on overflow in subtraction
                 self.registers.f.carry = overflow;
+
                 // Half Carry is set if adding the lower nibbles of the value and the register
                 // together result in a value bigger than 0xF.
                 self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
@@ -698,7 +775,6 @@ impl CPU {
                 self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
             }
             _ => {
-                // Handle other cases or return a default value as needed
                 self.registers.f.zero = false;
                 self.registers.f.subtract = false;
                 self.registers.f.carry = false;
@@ -718,14 +794,13 @@ impl CPU {
             ArithmeticTarget::H => (&mut self.registers.h, false),
             ArithmeticTarget::L => (&mut self.registers.l, false),
             _ => {
-                // Handle other cases or return as needed
                 return;
             }
         };
 
         *register_value = register_value.wrapping_add(1);
 
-        // Update status flags or any other logic you need here
+        // Update status flags
         self.registers.f.zero = false;
         self.registers.f.subtract = false;
         self.registers.f.carry = false;
@@ -743,14 +818,13 @@ impl CPU {
             ArithmeticTarget::H => (&mut self.registers.h, false),
             ArithmeticTarget::L => (&mut self.registers.l, false),
             _ => {
-                // Handle other cases or return as needed
                 return;
             }
         };
 
         *register_value = register_value.wrapping_sub(1);
 
-        // Update status flags or any other logic you need here
+        // Update status flags
         self.registers.f.zero = false;
         self.registers.f.subtract = false;
         self.registers.f.carry = false;
@@ -769,5 +843,256 @@ impl CPU {
         self.registers.f.subtract = false;
         self.registers.f.half_carry = false;
         self.registers.f.carry = true;
+    }
+
+    // Rotate right A register through carry flag
+    fn rra(&mut self) {
+        // extract current carry flag state
+        let carry = if self.registers.f.carry { 0x80 } else { 0 };
+
+        // determine new carry flag based on least significant bit
+        let new_carry = self.registers.a & 0x01 != 0;
+
+        // perform rotation to right
+        self.registers.a = (self.registers.a >> 1) | carry;
+
+        // update status flags
+        self.registers.f.carry = new_carry;
+        self.registers.f.zero = self.registers.a == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.half_carry = false;
+    }
+
+    // Rotate left A register through carry flag
+    fn rla(&mut self) {
+        // extract current carry flag state
+        let carry = if self.registers.f.carry { 0x80 } else { 0 };
+
+        // determine new carry flag based on most significant bit
+        let new_carry = self.registers.a & 0x80 != 0;
+
+        // perform rotation to left
+        self.registers.a = (self.registers.a << 1) | carry;
+
+        // update status flags
+        self.registers.f.carry = new_carry;
+        self.registers.f.zero = self.registers.a == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.half_carry = false;
+    }
+
+    // Rotate right A register not using the carry flag
+    fn rrca(&mut self) {
+        // determine new carry flag based on least significant bit
+        let new_carry = self.registers.a & 0x01 != 0;
+
+        // perform rotation to right
+        self.registers.a = (self.registers.a >> 1) | (self.registers.a << 7);
+
+        // update status flags
+        self.registers.f.carry = new_carry;
+        self.registers.f.zero = self.registers.a == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.half_carry = false;
+    }
+
+    // Rotate left A register not using the carry flag
+    fn rrla(&mut self) {
+        // determine new carry flag based on most significant bit
+        let new_carry = self.registers.a & 0x80 != 0;
+
+        // perform the rotation to the left
+        self.registers.a = (self.registers.a << 1) | (self.registers.a >> 7);
+
+        // update status flags
+        self.registers.f.carry = new_carry;
+        self.registers.f.zero = self.registers.a == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.half_carry = false;
+    }
+
+    // Toggle every bit of A register
+    fn cpl(&mut self) {
+        // toggle
+        self.registers.a = !self.registers.a;
+
+        // set flags
+        self.registers.f.subtract = true;
+        self.registers.f.half_carry = true; // since operation involves borrow in lower bit, half-carry true
+    }
+
+    // Test to see if specific bit of register is set
+    fn bit(&mut self, target: ArithmeticTarget, bit: u8) {
+        // get value of specified register
+        let value = self.registers.get_register_value(target);
+
+        // test if specific bit is set
+        let is_set = value & (1 << bit) != 0;
+
+        // update flags
+        self.registers.f.zero = !is_set;
+        self.registers.f.subtract = false;
+        self.registers.f.half_carry = true;
+    }
+
+    // Set a specific bit of specific register to 0
+    fn reset(&mut self, target: ArithmeticTarget, bit: u8) {
+        // get value of specified register
+        let mut value = self.registers.get_register_value(target);
+
+        // clear specified bit
+        value &= !(1 << bit);
+
+        // update register with modified value
+        self.registers.set_register_value(target, value);
+    }
+
+    // Set a specific bit of specific register to 1
+    fn set(&mut self, target: ArithmeticTarget, bit: u8) {
+        // get value of specified register
+        let mut value = self.registers.get_register_value(target);
+
+        // set specified bit
+        value |= 1 << bit;
+
+        // update register with modified value
+        self.registers.set_register_value(target, value);
+    }
+
+    // Bit shift a specific register right by 1
+    fn srl(&mut self, target: ArithmeticTarget) {
+        // get value of specified register
+        let mut value = self.registers.get_register_value(target);
+
+        // perform logical shift right
+        let result = value >> 1;
+
+        // set flags based on result
+        self.set_flags_after_shift(target, result);
+
+        // store result back in register
+        self.registers.set_register_value(target, result);
+    }
+
+    // Bit rotate a specific register right by 1 through carry flag
+    fn rr(&mut self, target: ArithmeticTarget) {
+        // get value of specified register
+        let mut value = self.registers.get_register_value(target);
+
+        // perform rotate right through carry
+        let result = (value >> 1) | (self.registers.f.carry as u8).wrapping_shl(7);
+
+        // set flags based on result
+        self.set_flags_after_shift(target, result);
+
+        // store result back in register
+        self.registers.set_register_value(target, result);
+    }
+
+    // Bit rotate a specific register left by 1 through carry flag
+    fn rl(&mut self, target: ArithmeticTarget) {
+        // get value of specified register
+        let value = self.registers.get_register_value(target);
+
+        // perform rotate left through carry
+        let result = (value << 1) | (self.registers.f.carry as u8);
+
+        // set flags based on result
+        self.set_flags_after_shift(target, result);
+
+        // store result back in register
+        self.registers.set_register_value(target, result);
+    }
+
+    // Bit rotate a specific register right by 1 without carry flag
+    fn rrc(&mut self, target: ArithmeticTarget) {
+        // get value of specified register
+        let value = self.registers.get_register_value(target);
+
+        // perform rotate right without carry
+        let result = (value >> 1) | (value << 7);
+
+        // set flags based on result
+        self.set_flags_after_shift(target, result);
+
+        // store result back in register
+        self.registers.set_register_value(target, result);
+    }
+
+    // Bit rotate a specific register left by 1 without carry flag
+    fn rlc(&mut self, target: ArithmeticTarget) {
+        // get value of specified register
+        let value = self.registers.get_register_value(target);
+
+        // perform rotate left without carry
+        let result = (value << 1) | (value >> 7);
+
+        // set flags based on result
+        self.set_flags_after_shift(target, result);
+
+        // store result back in register
+        self.registers.set_register_value(target, result);
+    }
+
+    // Arithmetic shift a specific register right by 1
+    fn sra(&mut self, target: ArithmeticTarget) {
+        // get value of specified register
+        let value = self.registers.get_register_value(target);
+
+        // perform arithmetic shift right (preserving sign bit)
+        let result = ((value as i8) >> 1) as u8; // if u8, most significant bit will be replaced with 0
+
+        // set flags based on result
+        self.set_flags_after_shift(target, result);
+
+        // store result back in register
+        self.registers.set_register_value(target, result);
+    }
+
+    // Arithmetic shift a specific register left by 1
+    fn sla(&mut self, target: ArithmeticTarget) {
+        // get value of specified register
+        let value = self.registers.get_register_value(target);
+
+        // perform arithmetic shift left
+        let result = value << 1;
+
+        // set flags based on result
+        self.set_flags_after_shift(target, result);
+
+        // store result back in register
+        self.registers.set_register_value(target, result);
+    }
+
+    // swap upper and lower nibbles
+    fn swap(&mut self, target: ArithmeticTarget) {
+        // get value of specified register
+        let value = self.registers.get_register_value(target);
+
+        // perform nibble swap
+        let result = (value << 4) | (value >> 4);
+
+        // update register with swapped value
+        self.registers.set_register_value(target, result);
+
+        // update flags
+        self.registers.f.zero = result == 0;
+        self.registers.f.subtract = false;
+        self.registers.f.carry = false;
+        self.registers.f.half_carry = false;
+    }
+
+    // Helper function to set flags after shift instructions
+    fn set_flags_after_shift(&mut self, target: ArithmeticTarget, result: u8) {
+        // Update zero flag
+        self.registers.f.zero = result == 0;
+
+        // Update subtract and carry flags
+        self.registers.f.subtract = false;
+
+        self.registers.f.carry = (result & 0x01) != 0; // bitwise AND to extract least significant bit using bitmask 0x01 and retains bit at pos 0
+
+        // Half-carry is not affected by shift instructions
+        self.registers.f.half_carry = false;
     }
 }
