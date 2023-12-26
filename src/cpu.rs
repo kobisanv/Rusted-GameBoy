@@ -180,6 +180,8 @@ enum Instruction {
     SRA(ArithmeticTarget),
     SLA(ArithmeticTarget),
     SWAP(ArithmeticTarget),
+    INCR(IncDecTarget),
+    RLCR(PrefixTarget),
 }
 
 #[derive(Clone, Copy)]
@@ -196,13 +198,69 @@ enum ArithmeticTarget {
     HL,
 }
 
+enum IncDecTarget { BC }
+enum PrefixTarget { B }
+
 struct CPU {
     registers: Registers,
     flags: FlagsRegister,
     instructions: Instruction,
+    pc: u16,
+    bus: MemoryBus,
+}
+
+struct MemoryBus {
+    memory: [u8; 0xFFFF]
+}
+
+impl MemoryBus {
+    fn read_byte(&self, address: u16) -> u8 {
+        self.memory[address as usize]
+    }
+}
+
+impl Instruction {
+    fn from_byte(byte: u8, prefixed: bool) -> Option<Instruction> {
+        if prefixed {
+            Instruction::from_byte_prefixed(byte)
+        } else {
+            Instruction::from_byte_not_prefixed(byte)
+        }
+    }
+
+    fn from_byte_prefixed(byte: u8) -> Option<Instruction> {
+        match byte {
+            _ => /* TODO: Add mapping for rest of instructions */ None
+        }
+    }
+
+    fn from_byte_not_prefixed(byte: u8) -> Option<Instruction> {
+        match byte {
+            _ => /* TODO: Add mapping for rest of instructions */ None
+        }
+    }
 }
 
 impl CPU {
+
+    fn step(&mut self) {
+        let mut instruction_byte = self.bus.read_byte(self.pc);
+        let prefixed = instruction_byte == 0xCB;
+        if prefixed {
+            instruction_byte = self.bus.read_byte(self.pc + 1);
+        }
+
+        let next_pc = if let Some(instruction) = Instruction::from_byte(instruction_byte, prefixed) {
+            self.execute(instruction)
+        } else {
+            let description = format!("0x{}{:x}", if prefixed { "cb" } else { "" }, instruction_byte);
+            panic!("Unknown instruction found for: {}", description)
+        };
+
+        self.pc = next_pc;
+
+    }
+
     // Function to get value of specific 16-bit register pair
     fn get_register_pair_value_name(&self, target: ArithmeticTarget) -> u16 {
         // match the target register pair and return its value
@@ -214,104 +272,134 @@ impl CPU {
         }
     }
 
-    fn execute(&mut self, instruction: Instruction) {
+    fn execute(&mut self, instruction: Instruction) -> u16 {
         match instruction {
             Instruction::ADD(target) => {
                 let value = self.registers.get_register_value(target);
                 let new_value = self.add(target, value);
                 self.registers.set_register_value(target, new_value);
+                self.pc.wrapping_add(1)
             }
             Instruction::AddHl(source) => {
                 self.add_hl_rr(source);
+                self.pc.wrapping_add(1)
             }
             Instruction::AddC(target) => {
                 let carry = self.registers.get_register_value(target);
                 let new_carry = self.adc(target, carry);
                 self.registers.set_register_value(target, new_carry);
+                self.pc.wrapping_add(1)
             }
             Instruction::SUB(target) => {
                 let diff = self.registers.get_register_value(target);
                 let new_diff = self.sub(target, diff);
                 self.registers.set_register_value(target, new_diff);
+                self.pc.wrapping_add(1)
             }
             Instruction::SBC(target) => {
                 let diff_c = self.registers.get_register_value(target);
                 let new_diffc = self.sbc(target, diff_c);
                 self.registers.set_register_value(target, new_diffc);
+                self.pc.wrapping_add(1)
             }
             Instruction::AND(target) => {
                 self.and(target);
+                self.pc.wrapping_add(1)
             }
             Instruction::OR(target) => {
                 self.or(target);
+                self.pc.wrapping_add(1)
             }
             Instruction::XOR(target) => {
                 self.xor(target);
+                self.pc.wrapping_add(1)
             }
             Instruction::CP(target) => {
                 let value = self.registers.get_register_value(target);
                 self.cp(target, value);
+                self.pc.wrapping_add(1)
             }
             Instruction::INC(target) => {
                 self.inc(target);
+                self.pc.wrapping_add(1)
             }
             Instruction::DEC(target) => {
                 self.dec(target);
+                self.pc.wrapping_add(1)
             }
             Instruction::CCF(target) => {
                 self.ccf();
+                self.pc.wrapping_add(1)
             }
             Instruction::SCF(target) => {
                 self.scf();
+                self.pc.wrapping_add(1)
             }
             Instruction::RRA(target) => {
                 self.rra();
+                self.pc.wrapping_add(1)
             }
             Instruction::RLA(target) => {
                 self.rla();
+                self.pc.wrapping_add(1)
             }
             Instruction::RRCA(target) => {
                 self.rrca();
+                self.pc.wrapping_add(1)
             }
             Instruction::RRLA(target) => {
                 self.rrla();
+                self.pc.wrapping_add(1)
             }
             Instruction::CPL(target) => {
                 self.cpl();
+                self.pc.wrapping_add(1)
             }
             Instruction::BIT(target, Bit) => {
                 self.bit(target, Bit);
+                self.pc.wrapping_add(1)
             }
             Instruction::RESET(target, Bit) => {
                 self.reset(target, Bit);
+                self.pc.wrapping_add(1)
             }
             Instruction::SET(target, Bit) => {
                 self.set(target, Bit);
+                self.pc.wrapping_add(1)
             }
             Instruction::SRL(target) => {
                 self.srl(target);
+                self.pc.wrapping_add(1)
             }
             Instruction::RR(target) => {
                 self.rr(target);
+                self.pc.wrapping_add(1)
             }
             Instruction::RL(target) => {
                 self.rl(target);
+                self.pc.wrapping_add(1)
             }
             Instruction::RRC(target) => {
                 self.rrc(target);
+                self.pc.wrapping_add(1)
             }
             Instruction::RLC(target) => {
                 self.rlc(target);
+                self.pc.wrapping_add(1)
             }
             Instruction::SRA(target) => {
                 self.sra(target);
+                self.pc.wrapping_add(1)
             }
             Instruction::SLA(target) => {
                 self.sla(target);
+                self.pc.wrapping_add(1)
             }
             Instruction::SWAP(target) => {
                 self.swap(target);
+                self.pc.wrapping_add(1)
             }
+            _ => unimplemented!(),
         }
     }
 
